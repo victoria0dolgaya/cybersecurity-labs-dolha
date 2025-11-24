@@ -1,0 +1,156 @@
+UA_CHARS = "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"
+UA_LEN = len(UA_CHARS)
+
+EN_CHARS = "abcdefghijklmnopqrstuvwxyz"
+EN_LEN = len(EN_CHARS)
+
+# генерація ключів
+def create_caesar_shift(date_input: str) -> int:
+# Формує числовий зсув для шифру Цезаря, бере всі цифри з введеної дати і підсумовує.
+    total = 0
+    for symbol in date_input:
+        if symbol.isdigit():
+            total += int(symbol)
+    return total
+
+
+def make_vigenere_key(lastname: str) -> str:
+# Створює ключ-слово з прізвища, беруться тільки українські або англійські літери (нижній регістр).
+    result_key = ""
+    for symbol in lastname.lower():
+        if symbol in UA_CHARS or symbol in EN_CHARS:
+            result_key += symbol
+    return result_key
+
+
+# Алгоритм Цезаря
+def run_caesar(text: str, base_shift: int, mode="enc") -> str:
+# Шифрування/дешифрування Цезаря з підтримкою UA + EN алфавітів.
+
+    output = ""
+    direction = 1 if mode == "enc" else -1
+
+    for ch in text:
+        ch_low = ch.lower()
+
+        # Вибір алфавіту
+        if ch_low in UA_CHARS:
+            alphabet = UA_CHARS
+            alen = UA_LEN
+        elif ch_low in EN_CHARS:
+            alphabet = EN_CHARS
+            alen = EN_LEN
+        else:
+            output += ch
+            continue
+
+        # Корекція зсуву
+        shift = (base_shift * direction) % alen
+        old_index = alphabet.index(ch_low)
+        new_index = (old_index + shift) % alen
+        new_ch = alphabet[new_index]
+
+        output += new_ch.upper() if ch.isupper() else new_ch
+
+    return output
+
+
+# Алгоритм Віженера
+def run_vigenere(text: str, key: str, mode="enc") -> str:
+# Шифрування/розшифрування Віженера.
+    if not key:
+        print("Неможливо виконати операцію: ключове слово порожнє.")
+        return text
+
+    result = ""
+    k_pos = 0
+    k_len = len(key)
+    direction = 1 if mode == "enc" else -1
+
+    for ch in text:
+        ch_low = ch.lower()
+
+        if ch_low in UA_CHARS:
+            alphabet = UA_CHARS
+            alen = UA_LEN
+        elif ch_low in EN_CHARS:
+            alphabet = EN_CHARS
+            alen = EN_LEN
+        else:
+            result += ch
+            continue
+
+        base_index = alphabet.index(ch_low)
+        k_char = key[k_pos % k_len]
+
+        if k_char in UA_CHARS:
+            k_shift = UA_CHARS.index(k_char)
+        else:
+            k_shift = EN_CHARS.index(k_char)
+
+        new_index = (base_index + k_shift * direction) % alen
+        new_ch = alphabet[new_index]
+
+        result += new_ch.upper() if ch.isupper() else new_ch
+        k_pos += 1
+
+    return result
+
+# Основна програма
+def main():
+    print("=" * 55)
+    print("   АНАЛІЗ КЛАСИЧНИХ ШИФРІВ: ЦЕЗАР ТА ВІЖЕНЕР")
+    print("=" * 55)
+
+    surname = input("Введіть ваше прізвище: ")
+    birth = input("Дата народження (ДД.ММ.РРРР): ")
+    text_input = input("Текст для обробки: ")
+
+    # --- Caesar ---
+    print("\n" + "-" * 55)
+    print("   ШИФРУВАННЯ МЕТОДОМ ЦЕЗАРЯ")
+    print("-" * 55)
+
+    ca_key = create_caesar_shift(birth)
+    print(f"Обчислений ключ: {ca_key} (UA→ {ca_key % UA_LEN}, EN→ {ca_key % EN_LEN})")
+
+    encrypted_c = run_caesar(text_input, ca_key, "enc")
+    decrypted_c = run_caesar(encrypted_c, ca_key, "dec")
+
+    print(f"\nШифротекст:\n{encrypted_c}")
+    print(f"\nРезультат розшифрування:\n{decrypted_c}")
+
+    # Vigenere 
+    print("\n" + "-" * 55)
+    print("   ШИФР ВІЖЕНЕРА")
+    print("-" * 55)
+
+    key_word = make_vigenere_key(surname)
+    print(f"Ключове слово: \"{key_word}\"")
+
+    encrypted_v = run_vigenere(text_input, key_word, "enc")
+    decrypted_v = run_vigenere(encrypted_v, key_word, "dec")
+
+    print(f"\nШифротекст Віженера:\n{encrypted_v}")
+    print(f"\nДекодування:\n{decrypted_v}")
+
+    # Table 
+    print("\n" + "-" * 55)
+    print("   ПОРІВНЯННЯ АЛГОРИТМІВ")
+    print("-" * 55)
+
+    print(f"{'Критерій':<25} | {'Цезар':<28} | {'Віженер':<28}")
+    print("-" * 85)
+    print(f"{'Тип шифру':<25} | {'Моноалфавітний':<28} | {'Поліалфавітний':<28}")
+    print(f"{'Ключ':<25} | {'Число (зсув)':<28} | {'Слово':<28}")
+    print(f"{'Складність':<25} | {'Дуже низька':<28} | {'Середня':<28}")
+    print(f"{'Стійкість':<25} | {'Миттєво ламається':<28} | {'Помірна':<28}")
+
+    print("\n Висновок:")
+    print("Шифр Цезаря забезпечує мінімальний захист і легко піддається brute-force.")
+    print("Віженер є стійкішим, але при короткому ключі також вразливий.")
+    print("\nГотово.\n")
+
+
+if __name__ == "__main__":
+    main()
