@@ -1,0 +1,90 @@
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.backends import default_backend
+
+
+# Фіксована сіль (допустимо для лабораторної роботи)
+SALT = b"lab4_fixed_salt_2024"
+
+
+def create_key(password: str) -> bytes:
+    """
+    Генерує симетричний ключ із пароля користувача.
+    """
+    password_bytes = password.encode()
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=SALT,
+        iterations=50000,
+        backend=default_backend()
+    )
+
+    return base64.urlsafe_b64encode(kdf.derive(password_bytes))
+
+
+def encrypt_text(text: str, key: bytes) -> bytes:
+    """
+    Шифрує текстове повідомлення.
+    """
+    f = Fernet(key)
+    return f.encrypt(text.encode())
+
+
+def decrypt_text(token: bytes, key: bytes) -> str:
+    """
+    Розшифровує повідомлення.
+    """
+    f = Fernet(key)
+    try:
+        return f.decrypt(token).decode()
+    except Exception:
+        return "❌ ПОМИЛКА: Невірний пароль або пошкоджені дані."
+
+
+def main():
+    while True:
+        print("\n=== ЛАБОРАТОРНА РОБОТА №4 ===")
+        print("1 — Зашифрувати повідомлення")
+        print("2 — Розшифрувати повідомлення")
+        print("3 — Вийти")
+
+        choice = input("Оберіть дію: ").strip()
+
+        if choice == "1":
+            print("\n[ РЕЖИМ ШИФРУВАННЯ ]")
+            password = input("Введіть пароль: ")
+            message = input("Введіть повідомлення: ")
+
+            key = create_key(password)
+            encrypted = encrypt_text(message, key)
+
+            print("\n✅ Повідомлення зашифровано")
+            print("Зашифрований текст:")
+            print(encrypted.decode())
+
+        elif choice == "2":
+            print("\n[ РЕЖИМ РОЗШИФРУВАННЯ ]")
+            password = input("Введіть пароль: ")
+            token = input("Введіть зашифрований текст: ")
+
+            key = create_key(password)
+            result = decrypt_text(token.encode(), key)
+
+            print("\n🔎 Результат:")
+            print(result)
+
+        elif choice == "3":
+            print("\nЗавершення роботи програми.")
+            break
+
+        else:
+            print("❗ Невірний вибір. Спробуйте ще раз.")
+
+
+if __name__ == "__main__":
+    main()
+
