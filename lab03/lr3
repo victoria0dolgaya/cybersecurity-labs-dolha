@@ -1,0 +1,125 @@
+from PIL import Image
+import sys
+
+
+STOP_SEQUENCE = b"\x00\xff\x00\xff"
+
+
+def bytes_to_binary(data: bytes) -> list[int]:
+    bits = []
+    for b in data:
+        for pos in range(8):
+            bits.append((b >> (7 - pos)) & 1)
+    return bits
+
+
+def binary_to_bytes(bits: list[int]) -> bytes:
+    output = []
+    acc = 0
+    filled = 0
+
+    for bit in bits:
+        acc = (acc << 1) | bit
+        filled += 1
+
+        if filled == 8:
+            output.append(acc)
+            acc = 0
+            filled = 0
+
+    return bytes(output)
+
+
+def embed_text(source_img, target_img, text):
+    image = Image.open(source_img).convert("RGB")
+    px = image.load()
+    width, height = image.size
+
+    payload = text.encode("utf-8") + STOP_SEQUENCE
+    bitstream = bytes_to_binary(payload)
+
+    max_bits = width * height * 3
+    if len(bitstream) > max_bits:
+        raise ValueError("Повідомлення завелике для цього зображення.")
+
+    index = 0
+
+    for y in range(height):
+        for x in range(width):
+            if index >= len(bitstream):
+                break
+
+            r, g, b = px[x, y]
+
+            if index < len(bitstream):
+                r = (r & 0b11111110) | bitstream[index]
+                index += 1
+            if index < len(bitstream):
+                g = (g & 0b11111110) | bitstream[index]
+                index += 1
+            if index < len(bitstream):
+                b = (b & 0b11111110) | bitstream[index]
+                index += 1
+
+            px[x, y] = (r, g, b)
+
+        if index >= len(bitstream):
+            break
+
+    image.save(target_img, "PNG")
+    print(f"✔ Повідомлення приховано у файлі: {target_img}")
+    print(f"ℹ Використано бітів: {index}/{max_bits}")
+
+
+def reveal_text(stego_img):
+    image = Image.open(stego_img).convert("RGB")
+    px = image.load()
+    width, height = image.size
+
+    bits = []
+
+    for y in range(height):
+        for x in range(width):
+            r, g, b = px[x, y]
+            bits.extend([r & 1, g & 1, b & 1])
+
+    data = binary_to_bytes(bits)
+    stop = data.find(STOP_SEQUENCE)
+
+    if stop == -1:
+        raise ValueError("Приховане повідомлення не знайдено.")
+
+    message = data[:stop].decode("utf-8")
+    print("📨 Отримане повідомлення:")
+    print(message)
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Використання:")
+        print("  python steg.py encode input.png output.png Ваш текст")
+        print("  python steg.py decode image.png")
+        return
+
+    action = sys.argv[1].lower()
+
+    try:
+        if action == "encode":
+            if len(sys.argv) < 5:
+                raise ValueError("Недостатньо аргументів для encode.")
+            src, dst = sys.argv[2], sys.argv[3]
+            msg = " ".join(sys.argv[4:])
+            embed_text(src, dst, msg)
+
+        elif action == "decode":
+            reveal_text(sys.argv[2])
+
+        else:
+            print("Невідома команда.")
+
+    except Exception as err:
+        print("❌ Помилка:", err)
+
+
+if __name__ == "__main__":
+    main()
