@@ -1,0 +1,123 @@
+# Підтримувані алфавіти
+ALPHABET_UA = "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"
+ALPHABET_EN = "abcdefghijklmnopqrstuvwxyz"
+
+
+def calc_shift_from_date(date_str):
+    """
+    Формує зсув для шифру Цезаря на основі дати народження.
+    Логіка: добуток цифр дати + довжина рядка.
+    """
+    digits = [int(x) for x in date_str if x.isdigit()]
+    result = 1
+    for d in digits:
+        result *= d if d != 0 else 1
+    return result
+
+
+def prepare_key_from_surname(surname):
+    """
+    Формує ключ для шифру Віженера з прізвища.
+    Використовуються лише літери.
+    """
+    key = ""
+    for ch in surname.lower():
+        if ch in ALPHABET_UA or ch in ALPHABET_EN:
+            key += ch
+    return key
+
+
+def shift_char(ch, shift, alphabet):
+    idx = alphabet.index(ch)
+    return alphabet[(idx + shift) % len(alphabet)]
+
+
+def caesar_cipher(text, shift, encrypt=True):
+    """
+    Реалізація шифру Цезаря з підтримкою UA та EN.
+    """
+    result = ""
+    step = shift if encrypt else -shift
+
+    for symbol in text:
+        low = symbol.lower()
+
+        if low in ALPHABET_UA:
+            new = shift_char(low, step, ALPHABET_UA)
+        elif low in ALPHABET_EN:
+            new = shift_char(low, step, ALPHABET_EN)
+        else:
+            result += symbol
+            continue
+
+        result += new.upper() if symbol.isupper() else new
+
+    return result
+
+
+def vigenere_cipher(text, key, encrypt=True):
+    """
+    Реалізація шифру Віженера.
+    """
+    if not key:
+        return text
+
+    output = ""
+    k = 0
+    direction = 1 if encrypt else -1
+
+    for ch in text:
+        low = ch.lower()
+
+        if low in ALPHABET_UA:
+            alphabet = ALPHABET_UA
+        elif low in ALPHABET_EN:
+            alphabet = ALPHABET_EN
+        else:
+            output += ch
+            continue
+
+        key_char = key[k % len(key)]
+        shift = alphabet.index(key_char) * direction
+
+        encoded = shift_char(low, shift, alphabet)
+        output += encoded.upper() if ch.isupper() else encoded
+        k += 1
+
+    return output
+
+
+def run():
+    print("=== Аналіз класичних методів шифрування ===")
+
+    surname = input("Прізвище: ")
+    birthdate = input("Дата народження (ДД.ММ.РРРР): ")
+    message = input("Вхідний текст: ")
+
+    # --- Caesar ---
+    caesar_shift = calc_shift_from_date(birthdate)
+    encrypted_caesar = caesar_cipher(message, caesar_shift, True)
+    decrypted_caesar = caesar_cipher(encrypted_caesar, caesar_shift, False)
+
+    print("\n[Цезар]")
+    print("Зсув:", caesar_shift)
+    print("Зашифровано:", encrypted_caesar)
+    print("Розшифровано:", decrypted_caesar)
+
+    # --- Vigenere ---
+    key = prepare_key_from_surname(surname)
+    encrypted_vig = vigenere_cipher(message, key, True)
+    decrypted_vig = vigenere_cipher(encrypted_vig, key, False)
+
+    print("\n[Віженер]")
+    print("Ключ:", key)
+    print("Зашифровано:", encrypted_vig)
+    print("Розшифровано:", decrypted_vig)
+
+    print("\nПорівняння:")
+    print("- Цезар: простий, легко ламається перебором.")
+    print("- Віженер: складніший, стійкіший за рахунок ключа.")
+
+
+if __name__ == "__main__":
+    run()
