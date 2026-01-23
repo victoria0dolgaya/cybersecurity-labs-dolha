@@ -1,0 +1,120 @@
+import hashlib
+from pathlib import Path
+
+
+MODULO = 65537  # інший модуль, не як у подруги
+
+
+# ХЕШ-ФУНКЦІЇ 
+def sha256(data: bytes) -> bytes:
+    return hashlib.sha256(data).digest()
+
+
+# КЛЮЧІ 
+def build_private_key(name: str, birthday: str, phrase: str) -> bytes:
+    """
+    Формує приватний ключ з персональних даних
+    """
+    source = f"{name}|{birthday}|{phrase}".encode("utf-8")
+    return sha256(source)
+
+
+def build_public_key(private_key: bytes) -> int:
+    """
+    Публічний ключ = сума байтів приватного ключа по модулю
+    """
+    return sum(private_key) % MODULO
+
+
+# ПІДПИС
+def create_signature(file_path: str, private_key: bytes) -> bytes:
+    data = Path(file_path).read_bytes()
+    file_hash = sha256(data)
+
+    # побайтова операція додавання по модулю 256
+    signature = bytes((h + k) % 256 for h, k in zip(file_hash, private_key))
+    return signature
+
+
+def check_signature(
+    file_path: str,
+    signature: bytes,
+    private_key: bytes,
+    public_key: int
+) -> bool:
+    # перевірка відповідності публічного ключа
+    if build_public_key(private_key) != public_key:
+        return False
+
+    data = Path(file_path).read_bytes()
+    actual_hash = sha256(data)
+
+    restored_hash = bytes(
+        (s - k) % 256 for s, k in zip(signature, private_key)
+    )
+
+    return restored_hash == actual_hash
+
+
+# МЕНЮ
+def main():
+    print("=== Навчальна модель цифрового підпису ===")
+
+    surname = input("Введіть прізвище: ").strip()
+    birth = input("Введіть дату народження (ДДММРРРР): ").strip()
+    secret = input("Введіть секретну фразу: ").strip()
+    file_path = input("Вкажіть шлях до файлу: ").strip()
+
+    private_key = build_private_key(surname, birth, secret)
+    public_key = build_public_key(private_key)
+
+    print("\nПриватний ключ (hex):", private_key.hex())
+    print("Публічний ключ:", public_key)
+
+    while True:
+        print("\nОберіть дію:")
+        print("1 — Підписати файл")
+        print("2 — Перевірити підпис")
+        print("3 — Імітувати підробку")
+        print("4 — Вийти")
+
+        choice = input("Ваш вибір: ").strip()
+
+        if choice == "1":
+            try:
+                sig = create_signature(file_path, private_key)
+                print("Підпис (hex):", sig.hex())
+            except FileNotFoundError:
+                print("Файл не знайдено.")
+
+        elif choice == "2":
+            sig_hex = input("Введіть підпис (hex): ").strip()
+            try:
+                sig = bytes.fromhex(sig_hex)
+                ok = check_signature(file_path, sig, private_key, public_key)
+                print("Результат:", "ПІДПИС ДІЙСНИЙ" if ok else "ПІДПИС НЕДІЙСНИЙ")
+            except ValueError:
+                print("Невірний формат підпису.")
+
+        elif choice == "3":
+            try:
+                original_sig = create_signature(file_path, private_key)
+                data = Path(file_path).read_bytes() + b"!"
+                fake_hash = sha256(data)
+
+                print("Оригінальний підпис:", original_sig.hex())
+                print("Результат підробки:",
+                      "ВИЯВЛЕНА" if sha256(Path(file_path).read_bytes()) != fake_hash else "НЕ ВИЯВЛЕНА")
+            except FileNotFoundError:
+                print("Файл не знайдено.")
+
+        elif choice == "4":
+            print("Роботу завершено.")
+            break
+
+        else:
+            print("Невірний вибір.")
+
+
+if __name__ == "__main__":
+    main()
