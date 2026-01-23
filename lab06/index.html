@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Лабораторна робота №6</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+        .container {
+            display: flex;
+            gap: 40px;
+        }
+        .box {
+            border: 1px solid #aaa;
+            padding: 20px;
+            border-radius: 8px;
+            width: 300px;
+        }
+        ul {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Демонстрація SQL-інʼєкції</h1>
+
+<div class="container">
+
+    <div class="box">
+        <h3>❌ Вразливий пошук</h3>
+        <form method="POST" action="/search_vulnerable">
+            <label>Логін користувача:</label><br>
+            <input type="text" name="login">
+            <br><br>
+            <button type="submit">Шукати</button>
+        </form>
+    </div>
+
+    <div class="box">
+        <h3>✅ Захищений пошук</h3>
+        <form method="POST" action="/search_secure">
+            <label>Логін користувача:</label><br>
+            <input type="text" name="login">
+            <br><br>
+            <button type="submit">Шукати</button>
+        </form>
+    </div>
+
+</div>
+
+{% if users %}
+    <h3>Результат ({{ mode }})</h3>
+    <ul>
+        {% for user in users %}
+            <li>{{ user["login"] }} — {{ user["role"] }}</li>
+        {% endfor %}
+    </ul>
+{% endif %}
+
+</body>
+</html>
