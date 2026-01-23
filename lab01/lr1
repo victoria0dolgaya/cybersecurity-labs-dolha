@@ -1,0 +1,97 @@
+import re
+
+
+def check_password_strength(pwd, username, birthdate):
+    points = 0
+    notes = []
+
+    # Перевірка довжини
+    if len(pwd) >= 8:
+        points += 2
+    else:
+        notes.append("Збільште довжину пароля (мінімум 8 символів).")
+
+    # Перевірки складу
+    if re.search(r"[A-Z]", pwd):
+        points += 1
+    else:
+        notes.append("Додайте велику літеру.")
+
+    if re.search(r"[a-z]", pwd):
+        points += 1
+    else:
+        notes.append("Додайте малу літеру.")
+
+    if re.search(r"\d", pwd):
+        points += 1
+    else:
+        notes.append("Додайте цифру.")
+
+    if re.search(r"[!@#$%^&*]", pwd):
+        points += 2
+    else:
+        notes.append("Використайте спеціальний символ (!@#$%^&*).")
+
+    # Персональні дані
+    if username.lower() in pwd.lower():
+        points -= 2
+        notes.append("Пароль містить ім’я користувача.")
+
+    for part in birthdate.split("."):
+        if part in pwd:
+            points -= 1
+            notes.append("Пароль містить частину дати народження.")
+            break
+
+    points = max(0, min(points, 10))
+    return points, notes
+
+
+def security_level(score):
+    if score >= 8:
+        return "Високий 🟢"
+    elif score >= 5:
+        return "Середній 🟡"
+    else:
+        return "Низький 🔴"
+
+
+
+def main():
+    print("🔐 Аналіз безпеки пароля")
+
+    while True:
+        name = input("\nВведіть ваше ім’я: ")
+        birth = input("Введіть дату народження (DD.MM.YYYY): ")
+        password = input("Введіть пароль: ")
+
+        score, advice = check_password_strength(password, name, birth)
+
+        print("\n📊 Результат:")
+        print(f"Оцінка: {score}/10")
+        print("Рівень безпеки:", security_level(score))
+
+        if advice:
+            print("\n⚠ Рекомендації:")
+            for a in advice:
+                print("-", a)
+        else:
+            print("\n✅ Пароль відповідає базовим вимогам безпеки.")
+
+        # Меню вибору
+        print("\n🔄 Меню:")
+        print("1 — Перевірити інший пароль")
+        print("2 — Завершити програму")
+
+        choice = input("Ваш вибір: ").strip()
+
+        if choice == "2":
+            print("\n👋 Роботу завершено. Дякую за використання програми!")
+            break
+        elif choice != "1":
+            print("⚠ Невірний вибір. Програма завершується.")
+            break
+
+
+if __name__ == "__main__":
+    main()
