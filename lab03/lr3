@@ -1,124 +1,189 @@
 from PIL import Image
-import sys
+import os
 
 
-STOP_SEQUENCE = b"\x00\xff\x00\xff"
-
-
-def bytes_to_binary(data: bytes) -> list[int]:
+# Допоміжні функції
+def bytes_to_bits(data: bytes) -> list[int]:
     bits = []
     for b in data:
-        for pos in range(8):
-            bits.append((b >> (7 - pos)) & 1)
+        for i in range(7, -1, -1):
+            bits.append((b >> i) & 1)
     return bits
 
 
-def binary_to_bytes(bits: list[int]) -> bytes:
-    output = []
-    acc = 0
-    filled = 0
+def bits_to_bytes(bits: list[int]) -> bytes:
+    out = bytearray()
+    for i in range(0, len(bits), 8):
+        byte = 0
+        chunk = bits[i:i+8]
+        for bit in chunk:
+            byte = (byte << 1) | bit
+        out.append(byte)
+    return bytes(out)
 
+
+def int_to_32bits(n: int) -> list[int]:
+    # 32 біти довжини повідомлення (в байтах)
+    return [(n >> i) & 1 for i in range(31, -1, -1)]
+
+
+def bits32_to_int(bits: list[int]) -> int:
+    n = 0
     for bit in bits:
-        acc = (acc << 1) | bit
-        filled += 1
-
-        if filled == 8:
-            output.append(acc)
-            acc = 0
-            filled = 0
-
-    return bytes(output)
+        n = (n << 1) | bit
+    return n
 
 
-def embed_text(source_img, target_img, text):
-    image = Image.open(source_img).convert("RGB")
-    px = image.load()
-    width, height = image.size
+def file_size_bytes(path: str) -> int:
+    return os.path.getsize(path)
 
-    payload = text.encode("utf-8") + STOP_SEQUENCE
-    bitstream = bytes_to_binary(payload)
 
-    max_bits = width * height * 3
-    if len(bitstream) > max_bits:
-        raise ValueError("Повідомлення завелике для цього зображення.")
+# ЕТАП 2: hide_message()
+def hide_message(input_image_path: str, output_image_path: str, message: str) -> dict:
+    """
+    Приховує текст у зображенні (LSB) і зберігає у PNG.
+    Формат даних усередині:
+    [32 біти довжина повідомлення в байтах] + [повідомлення в UTF-8]
+    """
+    img = Image.open(input_image_path).convert("RGB")
+    pixels = list(img.getdata())
 
-    index = 0
+    msg_bytes = message.encode("utf-8")
+    length_bits = int_to_32bits(len(msg_bytes))
+    msg_bits = bytes_to_bits(msg_bytes)
+    payload = length_bits + msg_bits
 
-    for y in range(height):
-        for x in range(width):
-            if index >= len(bitstream):
+    capacity = len(pixels) * 3  # 1 біт у кожен канал R,G,B
+    if len(payload) > capacity:
+        raise ValueError(
+            f"Повідомлення завелике! Потрібно {len(payload)} біт, доступно {capacity} біт."
+        )
+
+    changed_channels = 0
+    changed_pixels = 0
+
+    new_pixels = []
+    bit_idx = 0
+
+    for (r, g, b) in pixels:
+        if bit_idx >= len(payload):
+            new_pixels.append((r, g, b))
+            continue
+
+        original = (r, g, b)
+        channels = [r, g, b]
+
+        for c in range(3):
+            if bit_idx >= len(payload):
                 break
+            bit = payload[bit_idx]
+            bit_idx += 1
 
-            r, g, b = px[x, y]
+            old_val = channels[c]
+            new_val = (old_val & 0xFE) | bit  # заміна молодшого біта
+            if new_val != old_val:
+                changed_channels += 1
+            channels[c] = new_val
 
-            if index < len(bitstream):
-                r = (r & 0b11111110) | bitstream[index]
-                index += 1
-            if index < len(bitstream):
-                g = (g & 0b11111110) | bitstream[index]
-                index += 1
-            if index < len(bitstream):
-                b = (b & 0b11111110) | bitstream[index]
-                index += 1
+        new_pixel = tuple(channels)
+        if new_pixel != original:
+            changed_pixels += 1
 
-            px[x, y] = (r, g, b)
+        new_pixels.append(new_pixel)
 
-        if index >= len(bitstream):
-            break
+    out = Image.new("RGB", img.size)
+    out.putdata(new_pixels)
+    out.save(output_image_path, format="PNG")
 
-    image.save(target_img, "PNG")
-    print(f"✔ Повідомлення приховано у файлі: {target_img}")
-    print(f"ℹ Використано бітів: {index}/{max_bits}")
+    # Аналіз розміру файлу
+    before = file_size_bytes(input_image_path)
+    after = file_size_bytes(output_image_path)
+
+    return {
+        "input_size_bytes": before,
+        "output_size_bytes": after,
+        "changed_pixels": changed_pixels,
+        "changed_channels": changed_channels,
+        "capacity_bits": capacity,
+        "used_bits": len(payload),
+    }
 
 
-def reveal_text(stego_img):
-    image = Image.open(stego_img).convert("RGB")
-    px = image.load()
-    width, height = image.size
+# ЕТАП 2: extract_message()
+def extract_message(stego_image_path: str) -> str:
+    """
+    Витягує текст із зображення.
+    Зчитує 32 біти довжини (байти), потім читає відповідну кількість бітів повідомлення.
+    """
+    img = Image.open(stego_image_path).convert("RGB")
+    pixels = list(img.getdata())
 
     bits = []
+    for (r, g, b) in pixels:
+        bits.append(r & 1)
+        bits.append(g & 1)
+        bits.append(b & 1)
 
-    for y in range(height):
-        for x in range(width):
-            r, g, b = px[x, y]
-            bits.extend([r & 1, g & 1, b & 1])
+    length = bits32_to_int(bits[:32])  # довжина в байтах
+    msg_bits_len = length * 8
 
-    data = binary_to_bytes(bits)
-    stop = data.find(STOP_SEQUENCE)
+    msg_bits = bits[32:32 + msg_bits_len]
+    msg_bytes = bits_to_bytes(msg_bits)
 
-    if stop == -1:
-        raise ValueError("Приховане повідомлення не знайдено.")
+    return msg_bytes.decode("utf-8", errors="replace")
 
-    message = data[:stop].decode("utf-8")
-    print("📨 Отримане повідомлення:")
-    print(message)
+
+# ЕТАП 4: аналіз змін
+def print_analysis(stats: dict):
+    print("\n=== АНАЛІЗ ЗМІН ===")
+    print(f"Розмір оригіналу: {stats['input_size_bytes']} байт")
+    print(f"Розмір модифікованого: {stats['output_size_bytes']} байт")
+    print(f"Змінено пікселів: {stats['changed_pixels']}")
+    print(f"Змінено каналів (R/G/B): {stats['changed_channels']}")
+    print(f"Ємність (біт): {stats['capacity_bits']}")
+    print(f"Використано (біт): {stats['used_bits']}")
+
+
+# Меню 
+def menu():
+    print("\n=== ЛР3: Стеганографія LSB (текст у зображенні) ===")
+    print("1) Приховати повідомлення у зображенні (hide_message)")
+    print("2) Витягнути повідомлення із зображення (extract_message)")
+    print("3) Вийти")
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("Використання:")
-        print("  python steg.py encode input.png output.png Ваш текст")
-        print("  python steg.py decode image.png")
-        return
+    while True:
+        menu()
+        choice = input("Обери (1-3): ").strip()
 
-    action = sys.argv[1].lower()
+        if choice == "1":
+            inp = input("Шлях до ВХІДНОГО зображення (краще PNG): ").strip()
+            out = input("Шлях для ЗБЕРЕЖЕННЯ (наприклад stego.png): ").strip()
+            msg = input("Введіть текст для приховування: ")
 
-    try:
-        if action == "encode":
-            if len(sys.argv) < 5:
-                raise ValueError("Недостатньо аргументів для encode.")
-            src, dst = sys.argv[2], sys.argv[3]
-            msg = " ".join(sys.argv[4:])
-            embed_text(src, dst, msg)
+            try:
+                stats = hide_message(inp, out, msg)
+                print("\n✅ Повідомлення приховано успішно!")
+                print_analysis(stats)
+                print("\nПорада: відкрий обидва зображення — візуально різниці майже не буде (бо змінюється лише 1 біт).")
+            except Exception as e:
+                print(f"❌ Помилка: {e}")
 
-        elif action == "decode":
-            reveal_text(sys.argv[2])
+        elif choice == "2":
+            stego = input("Шлях до зображення зі схованим текстом (PNG): ").strip()
+            try:
+                msg = extract_message(stego)
+                print("\n✅ Витягнуте повідомлення:")
+                print(msg)
+            except Exception as e:
+                print(f"❌ Помилка: {e}")
 
+        elif choice == "3":
+            print("Вихід.")
+            break
         else:
-            print("Невідома команда.")
-
-    except Exception as err:
-        print("❌ Помилка:", err)
+            print("❌ Невірний вибір.")
 
 
 if __name__ == "__main__":
