@@ -1,119 +1,126 @@
+import base64
 import hashlib
-from pathlib import Path
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.backends import default_backend
+from cryptography.exceptions import InvalidSignature
 
 
-MODULO = 65537  # інший модуль, не як у подруги
+# Хешування
+def sha256(text: str) -> bytes:
+    return hashlib.sha256(text.encode("utf-8")).digest()
 
 
-# ХЕШ-ФУНКЦІЇ 
-def sha256(data: bytes) -> bytes:
-    return hashlib.sha256(data).digest()
+# Ключі: збереження / завантаження
+def generate_keys(private_path="private.pem", public_path="public.pem"):
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+
+    with open(private_path, "wb") as f:
+        f.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    with open(public_path, "wb") as f:
+        f.write(public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ))
+
+    print(f"✅ Ключі збережено: {private_path}, {public_path}")
 
 
-# КЛЮЧІ 
-def build_private_key(name: str, birthday: str, phrase: str) -> bytes:
-    """
-    Формує приватний ключ з персональних даних
-    """
-    source = f"{name}|{birthday}|{phrase}".encode("utf-8")
-    return sha256(source)
+def load_private_key(path="private.pem"):
+    with open(path, "rb") as f:
+        return serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
 
 
-def build_public_key(private_key: bytes) -> int:
-    """
-    Публічний ключ = сума байтів приватного ключа по модулю
-    """
-    return sum(private_key) % MODULO
+def load_public_key(path="public.pem"):
+    with open(path, "rb") as f:
+        return serialization.load_pem_public_key(f.read(), backend=default_backend())
 
 
-# ПІДПИС
-def create_signature(file_path: str, private_key: bytes) -> bytes:
-    data = Path(file_path).read_bytes()
-    file_hash = sha256(data)
+# Підпис / перевірка
+def sign_text(text: str, private_path="private.pem", sig_path="signature.b64"):
+    private_key = load_private_key(private_path)
+    digest = sha256(text)
 
-    # побайтова операція додавання по модулю 256
-    signature = bytes((h + k) % 256 for h, k in zip(file_hash, private_key))
-    return signature
-
-
-def check_signature(
-    file_path: str,
-    signature: bytes,
-    private_key: bytes,
-    public_key: int
-) -> bool:
-    # перевірка відповідності публічного ключа
-    if build_public_key(private_key) != public_key:
-        return False
-
-    data = Path(file_path).read_bytes()
-    actual_hash = sha256(data)
-
-    restored_hash = bytes(
-        (s - k) % 256 for s, k in zip(signature, private_key)
+    signature = private_key.sign(
+        digest,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
     )
 
-    return restored_hash == actual_hash
+    with open(sig_path, "w", encoding="utf-8") as f:
+        f.write(base64.b64encode(signature).decode("utf-8"))
+
+    print(f"✅ Підпис створено і збережено у {sig_path}")
 
 
-# МЕНЮ
+def verify_text(text: str, public_path="public.pem", sig_path="signature.b64"):
+    public_key = load_public_key(public_path)
+    digest = sha256(text)
+
+    with open(sig_path, "r", encoding="utf-8") as f:
+        signature = base64.b64decode(f.read().strip().encode("utf-8"))
+
+    try:
+        public_key.verify(
+            signature,
+            digest,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        print("✅ Підпис ДІЙСНИЙ (текст не змінений).")
+    except InvalidSignature:
+        print("❌ Підпис НЕДІЙСНИЙ (текст змінений або підпис не той).")
+    except FileNotFoundError:
+        print("❌ Файл підпису не знайдено.")
+
+
+# Меню
+def menu():
+    print("\n=== Меню: Спрощений цифровий підпис ===")
+    print("1) Згенерувати ключі (private.pem / public.pem)")
+    print("2) Підписати текст (зберегти signature.b64)")
+    print("3) Перевірити підпис тексту (signature.b64)")
+    print("4) Вийти")
+
+
 def main():
-    print("=== Навчальна модель цифрового підпису ===")
-
-    surname = input("Введіть прізвище: ").strip()
-    birth = input("Введіть дату народження (ДДММРРРР): ").strip()
-    secret = input("Введіть секретну фразу: ").strip()
-    file_path = input("Вкажіть шлях до файлу: ").strip()
-
-    private_key = build_private_key(surname, birth, secret)
-    public_key = build_public_key(private_key)
-
-    print("\nПриватний ключ (hex):", private_key.hex())
-    print("Публічний ключ:", public_key)
-
     while True:
-        print("\nОберіть дію:")
-        print("1 — Підписати файл")
-        print("2 — Перевірити підпис")
-        print("3 — Імітувати підробку")
-        print("4 — Вийти")
-
-        choice = input("Ваш вибір: ").strip()
+        menu()
+        choice = input("Обери (1-4): ").strip()
 
         if choice == "1":
-            try:
-                sig = create_signature(file_path, private_key)
-                print("Підпис (hex):", sig.hex())
-            except FileNotFoundError:
-                print("Файл не знайдено.")
+            generate_keys()
 
         elif choice == "2":
-            sig_hex = input("Введіть підпис (hex): ").strip()
-            try:
-                sig = bytes.fromhex(sig_hex)
-                ok = check_signature(file_path, sig, private_key, public_key)
-                print("Результат:", "ПІДПИС ДІЙСНИЙ" if ok else "ПІДПИС НЕДІЙСНИЙ")
-            except ValueError:
-                print("Невірний формат підпису.")
+            text = input("Введи текст для підпису: ")
+            sign_text(text)
 
         elif choice == "3":
-            try:
-                original_sig = create_signature(file_path, private_key)
-                data = Path(file_path).read_bytes() + b"!"
-                fake_hash = sha256(data)
-
-                print("Оригінальний підпис:", original_sig.hex())
-                print("Результат підробки:",
-                      "ВИЯВЛЕНА" if sha256(Path(file_path).read_bytes()) != fake_hash else "НЕ ВИЯВЛЕНА")
-            except FileNotFoundError:
-                print("Файл не знайдено.")
+            text = input("Введи текст для перевірки: ")
+            verify_text(text)
 
         elif choice == "4":
-            print("Роботу завершено.")
+            print("Вихід.")
             break
 
         else:
-            print("Невірний вибір.")
+            print("❌ Неправильний вибір. Введи 1-4.")
 
 
 if __name__ == "__main__":
